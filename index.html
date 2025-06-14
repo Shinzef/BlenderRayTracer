@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Ray Tracer Engine</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="canvas-container">
+            <canvas id="raytracer" width="600" height="400"></canvas>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <h3>🏠 Scene</h3>
+                <div class="control-row">
+                    <label>Preset:</label>
+                    <select id="scenePreset">
+                        <option value="default">Default Scene</option>
+                        <option value="glass">Glass Spheres</option>
+                        <option value="metal">Metal Showcase</option>
+                        <option value="cornell">Cornell Box</option>                   
+                    </select>
+                </div>                <button id="loadPresetBtn">Load Scene</button>
+                <div class="control-row">
+                    <label>Import Blender JSON:</label>
+                    <input type="file" id="sceneFile" accept=".json">
+                </div>
+                <button id="loadFileBtn">Import Blender Scene</button>
+            </div>
+
+            <div class="control-group">
+                <h3>📸 Camera</h3>
+                <div class="control-row">
+                    <label>FOV:</label>
+                    <input type="range" id="fov" min="30" max="120" value="45">
+                    <input type="number" id="fovNum" min="30" max="120" value="45">
+                </div>                <div class="control-row">
+                    <label for="cameraType">Type:</label>
+                    <select id="cameraType" aria-label="Camera Type">
+                        <option value="perspective">Perspective</option>
+                        <option value="orthographic">Orthographic</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Aperture:</label>
+                    <input type="range" id="aperture" min="0" max="0.1" step="0.001" value="0">
+                    <input type="number" id="apertureNum" min="0" max="0.1" step="0.001" value="0">
+                </div>
+                <div class="control-row">
+                    <label>Focus Dist:</label>
+                    <input type="range" id="focusDist" min="1" max="20" step="0.1" value="10">
+                    <input type="number" id="focusDistNum" min="1" max="20" step="0.1" value="10">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>🔆 Rendering</h3>
+                <div class="control-row">
+                    <label>Max Bounces:</label>
+                    <input type="range" id="maxBounces" min="1" max="10" value="5">
+                    <input type="number" id="maxBouncesNum" min="1" max="10" value="5">
+                </div>
+                <div class="control-row">
+                    <label>Samples:</label>
+                    <input type="range" id="samples" min="1" max="160" value="4">
+                    <input type="number" id="samplesNum" min="1" max="160" value="4">
+                </div>
+                <div class="control-row">
+                    <label>Gamma:</label>
+                    <input type="range" id="gamma" min="1" max="3" step="0.1" value="2.2">
+                    <input type="number" id="gammaNum" min="1" max="3" step="0.1" value="2.2">
+                </div>
+                <div class="control-row">
+                    <label>Exposure:</label>
+                    <input type="range" id="exposure" min="0.1" max="3" step="0.1" value="1">
+                    <input type="number" id="exposureNum" min="0.1" max="3" step="0.1" value="1">
+                </div>
+            </div>            <div class="control-group">
+                <h3>💅 Post-Processing</h3>                <div class="control-row">
+                    <label for="toneMapping">Tone Mapping:</label>
+                    <select id="toneMapping" aria-label="Tone Mapping Type">
+                        <option value="reinhard">Reinhard</option>
+                        <option value="aces">ACES</option>
+                        <option value="linear">Linear</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label for="antiAliasing">Anti-aliasing:</label>
+                    <select id="antiAliasing" aria-label="Anti-aliasing Type">
+                        <option value="supersampling">Supersampling</option>
+                        <option value="stochastic">Stochastic</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Denoising:</label>
+                    <input type="checkbox" id="denoising">
+                </div>
+                <div class="control-row">
+                    <label>Denoise Strength:</label>
+                    <input type="range" id="denoiseStrength" min="0.1" max="1" step="0.1" value="0.5">
+                    <input type="number" id="denoiseStrengthNum" min="0.1" max="1" step="0.1" value="0.5">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>🖼️ Textures</h3>
+                <div class="control-row">
+                    <label>Enable Textures:</label>
+                    <input type="checkbox" id="enableTextures" checked>
+                </div>                <div class="control-row">
+                    <label for="textureType">Texture Type:</label>
+                    <select id="textureType" aria-label="Texture Type">
+                        <option value="checkerboard">Checkerboard</option>
+                        <option value="noise">Perlin Noise</option>
+                        <option value="marble">Marble</option>
+                        <option value="wood">Wood</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Texture Scale:</label>
+                    <input type="range" id="textureScale" min="1" max="20" value="10">
+                    <input type="number" id="textureScaleNum" min="1" max="20" value="10">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>🌌 Background</h3>                <div class="control-row">
+                    <label for="backgroundType">Type:</label>
+                    <select id="backgroundType" aria-label="Background Type">
+                        <option value="gradient">Sky Gradient</option>
+                        <option value="solid">Solid Color</option>
+                        <option value="hdri">HDRI Environment</option>
+                        <option value="procedural_sky">Procedural Sky</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Sky Intensity:</label>
+                    <input type="range" id="skyIntensity" min="0.1" max="3" step="0.1" value="1">
+                    <input type="number" id="skyIntensityNum" min="0.1" max="3" step="0.1" value="1">
+                </div>
+            </div>            <button id="renderBtn">🎬 Render Scene</button>
+            <button id="cancelBtn">⏹️ Cancel Render</button>
+        </div>
+    </div>    <div class="status" id="status">
+        Ready to render
+    </div>
+    
+    <script type="module" src="js/ui-controller.js"></script>
+</body>
+</html>
