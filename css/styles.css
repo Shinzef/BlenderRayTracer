@@ -178,3 +178,43 @@ button:hover {
 .rendering {
     animation: pulse 1s infinite;
 }
+
+/* Dimensions display */
+.dimensions-display {
+    position: absolute;
+    bottom: 40px;
+    right: 20px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #10d5c2;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: monospace;
+    border: 1px solid rgba(16, 213, 194, 0.5);
+    z-index: 10;
+}
+
+.debug-button {
+    background-color: #4a2343;
+    color: #10d5c2;
+    border: 1px solid #10d5c2;
+    margin: 2px;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.debug-overlay button {
+    background-color: #10d5c2;
+    color: #000;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    float: right;
+}
+
+.debug-content {
+    margin-top: 10px;
+    font-family: monospace;
+    font-size: 12px;
+}

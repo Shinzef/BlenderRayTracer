@@ -1,7 +1,7 @@
 bl_info = {
     "name": "RayCast Exporter",
     "author": "Your Name",
-    "version": (1, 0, 3),
+    "version": (1, 0, 7),
     "blender": (4, 4, 0),
     "location": "View3D > Sidebar > RayCast Tab",
     "description": "Export scenes to RayCast ray tracer format",
@@ -19,6 +19,21 @@ from bpy.types import Operator, Panel, AddonPreferences
 def vec_to_array(v):
     """Convert a vector to a simple array"""
     return [v.x, v.y, v.z]
+
+def transformed_vec_to_array(v):
+    """
+    Converts a Blender Z-up vector to a Y-up vector and returns it as an array.
+    
+    Standard transformation from Blender (Z-up) to renderer (Y-up):
+    - Blender X (+right) → Renderer X (+right)
+    - Blender Y (+forward) → Renderer Z (+back, so forward is -Z)
+    - Blender Z (+up) → Renderer Y (+up)
+    
+    But since Blender cameras look down -Y and renderer cameras look down -Z,
+    the transformation should map the coordinate systems properly.
+    """
+    # Standard Z-up to Y-up transformation
+    return [v.x, v.z, -v.y]
 
 def color_to_array(c):
     """Convert a color to a simple array"""
@@ -48,10 +63,10 @@ class RAYCAST_OT_export_scene(Operator):
     export_materials: BoolProperty(
         name="Export Materials",
         description="Export materials",
-        default=True,
-    )
+        default=True,    )
     
     def execute(self, context):
+       
         scene_data = self.collect_scene_data(context)
         
         # Ensure the directory exists
@@ -116,7 +131,7 @@ class RAYCAST_OT_export_scene(Operator):
             return {
                 "type": "sphere",
                 "name": obj.name,
-                "center": vec_to_array(obj.location),
+                "center": transformed_vec_to_array(obj.location),
                 "radius": scale,
                 "material": self.export_material(obj) if self.export_materials else {"type": "default"}
             }
@@ -138,7 +153,7 @@ class RAYCAST_OT_export_scene(Operator):
             mesh.transform(obj.matrix_world)
             
             # Extract vertex positions
-            vertices = [vec_to_array(v.co) for v in mesh.vertices]
+            vertices = [transformed_vec_to_array(v.co) for v in mesh.vertices]
             
             # Extract indices
             indices = []
@@ -169,9 +184,8 @@ class RAYCAST_OT_export_scene(Operator):
         
         return {
             "type": "box",
-            "name": obj.name,
-            "min": vec_to_array(min_pt),
-            "max": vec_to_array(max_pt),
+            "name": obj.name,            "min": transformed_vec_to_array(min_pt),
+            "max": transformed_vec_to_array(max_pt),
             "material": self.export_material(obj) if self.export_materials else {"type": "default"}
         }
     
@@ -274,7 +288,7 @@ class RAYCAST_OT_export_scene(Operator):
         if light.type == 'POINT':
             return {
                 "type": "point",
-                "position": vec_to_array(obj.location),
+                "position": transformed_vec_to_array(obj.location),
                 "color": color,
                 "intensity": intensity
             }
@@ -283,24 +297,25 @@ class RAYCAST_OT_export_scene(Operator):
             direction = obj.matrix_world.to_quaternion() @ Vector((0, 0, -1))
             return {
                 "type": "directional",
-                "direction": vec_to_array(direction.normalized()),
-                "color": color,
+                "direction": transformed_vec_to_array(direction.normalized()),                "color": color,
                 "intensity": intensity
             }
-        
-        # Other light types could be implemented here
-        return None
+          # Other light types could be implemented here        return None
     
     def export_camera(self, camera_obj):
         """Export camera data"""
         if not camera_obj:
             # Default camera if none exists
+            scene = bpy.context.scene
+            resolution_x = scene.render.resolution_x
+            resolution_y = scene.render.resolution_y
             return {
                 "position": [0, 0, 5],
                 "lookAt": [0, 0, 0],
                 "up": [0, 1, 0],
                 "fov": 45,
-                "aspect": 1.5,
+                "aspect": resolution_x / resolution_y,
+                "resolution": [resolution_x, resolution_y],
                 "aperture": 0.0,
                 "focusDist": 10.0,
                 "type": "perspective"
@@ -308,35 +323,112 @@ class RAYCAST_OT_export_scene(Operator):
             
         camera = camera_obj.data
         
+        # Print debug information
+        print("\n=== CAMERA DEBUG INFORMATION ===")
+        print(f"Camera name: {camera_obj.name}")
+        print(f"Camera location (Blender): {camera_obj.location}")
+        print(f"Camera rotation (Blender): {camera_obj.rotation_euler}")
+        
         # Get camera basis vectors
         mat = camera_obj.matrix_world
-        position = vec_to_array(mat.translation)
+        print(f"Camera matrix world:\n{mat}")
         
-        # Forward is negative Z in Blender
-        forward = vec_to_array((mat.to_quaternion() @ Vector((0, 0, -1))).normalized())
-        up = vec_to_array((mat.to_quaternion() @ Vector((0, 1, 0))).normalized())
+        # Debug positions in Blender coordinate system
+        blender_position = vec_to_array(mat.translation)
+        print(f"Camera position (Blender coords): {blender_position}")
         
-        # Calculate lookAt from position + forward
-        look_at = [
-            position[0] + forward[0],
-            position[1] + forward[1],
-            position[2] + forward[2]
-        ]
+        # Debug the forward and up vectors in Blender space
+        blender_forward_vector = (mat.to_quaternion() @ Vector((0, 0, -1))).normalized()
+        blender_up_vector = (mat.to_quaternion() @ Vector((0, 1, 0))).normalized()
+        print(f"Forward vector (Blender coords): {vec_to_array(blender_forward_vector)}")
+        print(f"Up vector (Blender coords): {vec_to_array(blender_up_vector)}")
         
-        # Calculate FOV (assumes horizontal)
-        fov = math.degrees(camera.angle)
+        # Transform position to renderer coordinate system
+        position = transformed_vec_to_array(mat.translation)
+        print(f"Camera position (transformed for renderer): {position}")
         
-        # Aspect ratio
-        scene = bpy.context.scene
-        aspect = scene.render.resolution_x / scene.render.resolution_y
+        # Calculate lookAt point in Blender coordinates first, then transform
+        # Use a reasonable distance for lookAt calculation (not too large)
+        lookAt_distance = 10.0  # Fixed reasonable distance
+        blender_lookAt = mat.translation + blender_forward_vector * lookAt_distance
+        look_at = transformed_vec_to_array(blender_lookAt)
+        print(f"LookAt point (Blender coords): {vec_to_array(blender_lookAt)}")
+        print(f"LookAt point (transformed for renderer): {look_at}")
         
-        # For DOF
-        aperture = 0.0  # No DOF by default
+        # Transform up vector
+        up = transformed_vec_to_array(blender_up_vector)
+        print(f"Up vector (transformed for renderer): {up}")        
+        # Get the focus distance
         focus_dist = 10.0  # Default focus distance
         
         if camera.dof.use_dof:
+            # Use Blender's DOF distance
             aperture = camera.dof.aperture_fstop / 16.0  # Scale for our renderer
             focus_dist = camera.dof.focus_distance
+        else:
+            aperture = 0.0  # No DOF by default
+            # Try to find a reasonable focus distance
+            # If there's an active object, use the distance to that
+            active_obj = bpy.context.active_object
+            if active_obj and active_obj != camera_obj:
+                dist_vec = active_obj.location - camera_obj.location
+                focus_dist = dist_vec.length
+                print(f"Using distance to {active_obj.name} for focus_dist: {focus_dist}")
+            else:
+                # Use the lookAt distance as focus distance
+                focus_dist = lookAt_distance
+                print(f"Using lookAt distance as focus distance: {focus_dist}")
+        
+        # Debug: Compare with sample scene camera
+        print(f"\n--- COMPARISON WITH SAMPLE SCENE ---")
+        sample_pos = [0, 1, 3]
+        sample_lookAt = [0, 0, -1]
+        sample_up = [0, 1, 0]
+        print(f"Sample scene camera:")
+        print(f"  Position: {sample_pos}")
+        print(f"  LookAt:   {sample_lookAt}")
+        print(f"  Up:       {sample_up}")
+        print(f"Our exported camera:")
+        print(f"  Position: {position}")
+        print(f"  LookAt:   {look_at}")
+        print(f"  Up:       {up}")
+        
+        # Calculate direction vectors for comparison
+        our_direction = [
+            look_at[0] - position[0],
+            look_at[1] - position[1], 
+            look_at[2] - position[2]
+        ]
+        # Normalize it
+        length = math.sqrt(our_direction[0]**2 + our_direction[1]**2 + our_direction[2]**2)
+        if length > 0:
+            our_direction = [our_direction[0]/length, our_direction[1]/length, our_direction[2]/length]
+        
+        sample_direction = [
+            sample_lookAt[0] - sample_pos[0],
+            sample_lookAt[1] - sample_pos[1],
+            sample_lookAt[2] - sample_pos[2]
+        ]
+        # Normalize it
+        length = math.sqrt(sample_direction[0]**2 + sample_direction[1]**2 + sample_direction[2]**2)
+        if length > 0:
+            sample_direction = [sample_direction[0]/length, sample_direction[1]/length, sample_direction[2]/length]
+            
+        print(f"Our direction vector (normalized): {our_direction}")
+        print(f"Sample direction vector (normalized): {sample_direction}")
+        print("--------------------------------------")
+        print("================================\n")
+        
+        # Calculate FOV (assumes horizontal)
+        fov = math.degrees(camera.angle)
+          # Aspect ratio and resolution
+        scene = bpy.context.scene
+        resolution_x = scene.render.resolution_x
+        resolution_y = scene.render.resolution_y
+        aspect = resolution_x / resolution_y
+        
+        # For DOF
+        aperture = 0.0  # No DOF by default
         
         return {
             "position": position,
@@ -344,6 +436,7 @@ class RAYCAST_OT_export_scene(Operator):
             "up": up,
             "fov": fov,
             "aspect": aspect,
+            "resolution": [resolution_x, resolution_y],
             "aperture": aperture,
             "focusDist": focus_dist,
             "type": "perspective"  # Orthographic could be added later

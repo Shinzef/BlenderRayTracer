@@ -163,9 +163,23 @@ class RayTracer {
     gammaCorrect(color) {
         return PostProcessor.gammaCorrect(color, this.gamma);
     }
-    
-    async render(onProgress) {
+      async render(onProgress) {
         console.log('Starting render...'); // Debug log
+        
+        // Debug camera information before rendering
+        console.log('Camera Debug Information Before Rendering:');
+        if (this.camera) {
+            console.log('- Camera position (origin):', this.camera.origin);
+            console.log('- Camera w vector (points away from lookAt):', this.camera.w);
+            console.log('- Camera u vector (right):', this.camera.u);
+            console.log('- Camera v vector (up):', this.camera.v);
+            console.log('- Field of view:', this.camera.fov);
+            console.log('- Focus distance:', this.camera.focusDist);
+            console.log('- Aperture:', this.camera.aperture);
+        } else {
+            console.log('ERROR: No camera is set up!');
+        }
+        
         const data = this.imageData.data;
         const floatData = new Float32Array(data.length);
         let pixelCount = 0;
@@ -287,7 +301,7 @@ class RayTracer {
     /**
      * Load a scene from Blender-exported JSON
      * @param {Object} jsonData The parsed JSON data from a Blender export
-     */
+     */    
     loadFromJSON(jsonData) {
         console.log('Loading scene from Blender JSON:', jsonData);
         
@@ -300,6 +314,15 @@ class RayTracer {
             // Only update camera if one was included in the JSON
             if (result.camera) {
                 this.camera = result.camera;
+            }
+            
+            // Handle resolution change if provided in the scene data
+            if (result.newDimensions) {
+                this.resizeCanvas(result.newDimensions.width, result.newDimensions.height);
+                // Notify any listeners that dimensions have changed
+                if (typeof this.onResizeCallback === 'function') {
+                    this.onResizeCallback(result.newDimensions.width, result.newDimensions.height);
+                }
             }
             
             console.log('Successfully loaded scene from JSON');
@@ -411,17 +434,121 @@ class RayTracer {
         );
     }
     
-    updateCamera(params) {
+    /**     * Recreate the camera with updated dimensions
+     * This ensures the aspect ratio is correct after a resize
+     */    setupCamera() {
+        if (!this.camera) return;
+        
+        // Calculate lookAt point from the camera's current vectors
+        // w points away from lookAt, so origin - (w * focusDist) gives a more accurate lookAt point
+        const lookFrom = this.camera.origin;
+        // Use the stored focus distance for a more accurate lookAt calculation
+        const lookAt = lookFrom.sub(this.camera.w.mul(this.camera.focusDist));
+        
+        // Use the camera's existing up vector
+        const vup = this.camera.v; // This is already normalized
+        
+        // Get existing camera parameters
+        const fov = this.camera.fov || 45; // Default to 45 if not defined
+        const aperture = this.camera.aperture || 0.0;
+        const focusDist = this.camera.focusDist || 10.0;
+        const type = this.camera.type || 'perspective';
+        
+        console.log('Recreating camera:');
+        console.log('- Position:', lookFrom);
+        console.log('- LookAt:', lookAt);
+        console.log('- Up vector:', vup);
+        console.log('- Focus distance:', focusDist);
+        
+        // Create new camera with updated aspect ratio
         this.camera = new Camera(
-            new Vec3(3, 2, 2),
-            new Vec3(0, 0, -1),
-            new Vec3(0, 1, 0),
-            params.fov || 45,
-            this.width / this.height,
-            params.aperture || 0.0,
-            params.focusDist || 10.0,
-            params.type || 'perspective'
+            lookFrom,
+            lookAt,
+            vup,
+            fov,
+            this.width / this.height, // Updated aspect ratio
+            aperture,
+            focusDist,
+            type
         );
+    }
+      updateCamera(params) {
+        // Get current camera position and orientation if camera exists
+        let lookFrom = new Vec3(3, 2, 2);     // Default position
+        let lookAt = new Vec3(0, 0, -1);      // Default look-at
+        let vup = new Vec3(0, 1, 0);          // Default up vector
+        
+        // If camera already exists, preserve its position and orientation
+        if (this.camera) {
+            lookFrom = this.camera.origin;
+            // Calculate current lookAt from camera vectors
+            lookAt = this.camera.origin.sub(this.camera.w.mul(this.camera.focusDist || 10.0));
+            vup = this.camera.v;
+        }
+        
+        // Allow position override from params
+        if (params.position) {
+            lookFrom = new Vec3(params.position[0], params.position[1], params.position[2]);
+        }
+        if (params.lookAt) {
+            lookAt = new Vec3(params.lookAt[0], params.lookAt[1], params.lookAt[2]);
+        }
+        if (params.up) {
+            vup = new Vec3(params.up[0], params.up[1], params.up[2]);
+        }
+        
+        this.camera = new Camera(
+            lookFrom,
+            lookAt,
+            vup,
+            params.fov || (this.camera?.fov || 45),
+            this.width / this.height,
+            params.aperture || (this.camera?.aperture || 0.0),
+            params.focusDist || (this.camera?.focusDist || 10.0),
+            params.type || (this.camera?.type || 'perspective')
+        );
+    }
+    
+    /**
+     * Set camera position and orientation directly
+     */
+    setCameraPosition(lookFrom, lookAt, vup) {
+        if (!this.camera) {
+            // Create default camera if none exists
+            this.camera = new Camera(
+                lookFrom || new Vec3(3, 2, 2),
+                lookAt || new Vec3(0, 0, -1),
+                vup || new Vec3(0, 1, 0),
+                45,
+                this.width / this.height,
+                0.0,
+                10.0
+            );
+        } else {
+            // Update existing camera with new position
+            this.updateCamera({
+                position: lookFrom ? [lookFrom.x, lookFrom.y, lookFrom.z] : undefined,
+                lookAt: lookAt ? [lookAt.x, lookAt.y, lookAt.z] : undefined,
+                up: vup ? [vup.x, vup.y, vup.z] : undefined
+            });
+        }
+    }
+    
+    /**
+     * Get current camera position and orientation
+     */
+    getCameraPosition() {
+        if (!this.camera) return null;
+        
+        return {
+            position: this.camera.origin,
+            lookAt: this.camera.origin.sub(this.camera.w.mul(this.camera.focusDist)),
+            up: this.camera.v,
+            fov: this.camera.fov,
+            aperture: this.camera.aperture,
+            focusDist: this.camera.focusDist,
+            type: this.camera.type
+        };
     }
     
     updateRenderSettings(params) {
@@ -461,6 +588,95 @@ class RayTracer {
         // Rebuild the scene with current texture settings
         this.world = new World();
         this.setupDefaultScene();
+    }
+    
+    /**
+     * Resize the canvas to new dimensions
+     * @param {Number} width - New canvas width
+     * @param {Number} height - New canvas height
+     */
+    resizeCanvas(width, height) {
+        console.log(`Resizing canvas to ${width}x${height}`);
+        this.width = width;
+        this.height = height;
+        this.canvas.width = width;
+        this.canvas.style.width = `${width}px`;
+        this.canvas.height = height;
+        this.canvas.style.height = `${height}px`;
+        
+        // Re-create imageData with new dimensions
+        this.imageData = this.ctx.createImageData(this.width, this.height);
+        
+        // Update aspect ratio of camera if it exists
+        if (this.camera) {
+            this.setupCamera();
+        }
+    }
+    
+    /**
+     * Set a callback to be called when canvas is resized
+     * @param {Function} callback - Function to call with (width, height)
+     */
+    onResize(callback) {
+        this.onResizeCallback = callback;
+    }
+    
+    /**
+     * Load camera from predefined presets
+     */
+    loadCameraPreset(presetName) {
+        const presets = {
+            'default': {
+                position: [3, 2, 2],
+                lookAt: [0, 0, -1],
+                up: [0, 1, 0],
+                fov: 45,
+                aperture: 0.0,
+                focusDist: 10.0
+            },
+            'close-up': {
+                position: [1, 1, 1],
+                lookAt: [0, 0, -1],
+                up: [0, 1, 0],
+                fov: 60,
+                aperture: 0.02,
+                focusDist: 2.0
+            },
+            'wide-angle': {
+                position: [5, 3, 5],
+                lookAt: [0, 0, 0],
+                up: [0, 1, 0],
+                fov: 80,
+                aperture: 0.0,
+                focusDist: 15.0
+            },
+            'top-down': {
+                position: [0, 5, 0],
+                lookAt: [0, 0, -1],
+                up: [0, 0, -1],
+                fov: 45,
+                aperture: 0.0,
+                focusDist: 5.0
+            },
+            'side-view': {
+                position: [5, 0, 0],
+                lookAt: [0, 0, -1],
+                up: [0, 1, 0],
+                fov: 45,
+                aperture: 0.0,
+                focusDist: 5.0
+            }
+        };
+        
+        const preset = presets[presetName];
+        if (!preset) {
+            console.warn(`Camera preset '${presetName}' not found. Available presets:`, Object.keys(presets));
+            return false;
+        }
+        
+        this.updateCamera(preset);
+        console.log(`Loaded camera preset: ${presetName}`);
+        return true;
     }
 }
 

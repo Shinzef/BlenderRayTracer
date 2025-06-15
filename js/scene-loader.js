@@ -10,16 +10,28 @@ import { PointLight, DirectionalLight } from './lights.js';
 import { SolidColor } from './textures.js';
 import { Camera } from './camera.js';
 
-class SceneLoader {
-    /**
+class SceneLoader {    /**
      * Load a scene from a JSON file
      * @param {Object} jsonData - The parsed JSON data
-     * @param {Number} width - Canvas width for aspect ratio calculation
-     * @param {Number} height - Canvas height for aspect ratio calculation
-     * @returns {Object} Object containing world and camera
+     * @param {Number} width - Canvas width for aspect ratio calculation, used if not defined in jsonData
+     * @param {Number} height - Canvas height for aspect ratio calculation, used if not defined in jsonData
+     * @returns {Object} Object containing world, camera, and optionally new dimensions
      */
     static loadFromJSON(jsonData, width, height) {
         console.log('Loading scene from JSON:', jsonData);
+        
+        // Get resolution from camera data if available
+        let newDimensions = null;
+        if (jsonData.camera && jsonData.camera.resolution) {
+            newDimensions = {
+                width: jsonData.camera.resolution[0],
+                height: jsonData.camera.resolution[1]
+            };
+            // Update width and height for this function
+            width = newDimensions.width;
+            height = newDimensions.height;
+            console.log('Using resolution from scene:', width, 'x', height);
+        }
         
         const world = new World();
           // Set background
@@ -62,14 +74,13 @@ class SceneLoader {
                 }
             }
         }
-        
-        // Load camera
+          // Load camera
         let camera = null;
         if (jsonData.camera) {
             camera = this._createCamera(jsonData.camera, width / height);
         }
         
-        return { world, camera };
+        return { world, camera, newDimensions };
     }
     
     /**
@@ -191,22 +202,59 @@ class SceneLoader {
     /**
      * Create a camera from JSON data
      * @private
-     */
-    static _createCamera(camData, aspect) {
+     */    static _createCamera(camData, aspect) {
         const position = this._parseVec3(camData.position || [0, 0, 5]);
-        const lookAt = this._parseVec3(camData.lookAt || [0, 0, 0]);
+        let lookAt = this._parseVec3(camData.lookAt || [0, 0, 0]);
         const up = this._parseVec3(camData.up || [0, 1, 0]);
         const fov = camData.fov !== undefined ? camData.fov : 45;
         const aperture = camData.aperture !== undefined ? camData.aperture : 0.0;
-        const focusDist = camData.focusDist !== undefined ? camData.focusDist : 10.0;
+        
+        // Validate that lookAt is reasonable (not too close to position)
+        const distanceToLookAt = position.sub(lookAt).length();
+        if (distanceToLookAt < 1.0) {
+            console.warn('LookAt point is very close to camera position, this may cause issues');
+            console.log('Distance to lookAt:', distanceToLookAt);
+            console.log('Position:', position);
+            console.log('LookAt:', lookAt);
+            
+            // If lookAt is too close, move it further away in the same direction
+            const direction = position.sub(lookAt).normalize().mul(-1); // Direction from pos to lookAt
+            lookAt = position.add(direction.mul(100)); // Place lookAt 100 units away
+            console.log('Adjusted lookAt to:', lookAt);
+        }
+        
+        // Calculate the focus distance if not provided
+        // If lookAt is provided, use distance to lookAt
+        let focusDist = camData.focusDist;
+        if (focusDist === undefined) {
+            const toTarget = position.sub(lookAt);
+            focusDist = toTarget.length();
+            console.log('Calculated focus distance from lookAt:', focusDist);
+        }
+        
         const type = camData.type || 'perspective';
+        const finalAspect = camData.aspect || aspect;
+        
+        // Debug camera information
+        console.log('Camera Debug Information:');
+        console.log('- Raw camera data from JSON:', JSON.stringify(camData, null, 2));
+        console.log('- Parsed position:', position);
+        console.log('- Parsed lookAt:', lookAt);
+        console.log('- Parsed up vector:', up);
+        console.log('- Field of view:', fov);
+        console.log('- Aspect ratio:', finalAspect);
+        console.log('- Focus distance:', focusDist);
+        console.log('- Distance from position to lookAt:', position.sub(lookAt).length());
+        
+        // Visualization of what the camera will see
+        console.log('Camera direction (position to lookAt):', position.sub(lookAt).normalize().mul(-1));
         
         return new Camera(
             position,
             lookAt,
             up,
             fov,
-            camData.aspect || aspect,
+            finalAspect,
             aperture,
             focusDist,
             type
